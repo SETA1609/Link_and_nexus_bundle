@@ -1,0 +1,6 @@
+[submodule "editor"]
+	path = editor
+	url = git@github.com:SETA1609/Link-editor.git
+[submodule "engine"]
+	path = engine
+	url = git@github.com:SETA1609/Nexus-engine.git
