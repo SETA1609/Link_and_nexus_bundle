@@ -3,75 +3,85 @@
 **Meta-repository** that aggregates three architectural tiers via Git submodules:
 
 ```
-T3: Link-editor (editor/)     — Dear ImGui editor, consumes EditorHost
-T2: Nexus Engine (engine/)    — Hybrid SceneNode + optional Flecs ECS, servers, resources
-T1: zGameLib (engine/libs/)   — Platform, Vulkan, GPU, FrameRing, optional ImGui
+T3: Link-editor (editor/)    — Dear ImGui editor, consumes Nexus static lib
+T2: Nexus Engine (engine/)   — Hybrid SceneNode + Flecs ECS, delivered as static library
+T1: zGameLib (engine/libs/)  — Platform, Vulkan, GPU, FrameRing (Zig modules)
 ```
 
-## Pipeline architecture
+## Architecture & Compilation Targets
 
-The root `build.zig` orchestrates the build as a **Zig build DAG** (directed acyclic graph). Steps declare dependencies with `dependOn`; the build runner executes them in topological order — independent branches run concurrently, unchanged work is cached.
+The build follows **TheCherno's recommended engine architecture** (from the Hazel series):
+
+> *"Separate out your core engine into its own static library and then just link that to all of your executables."*
+
+This gives a clean boundary between the engine as a product and its consumers:
 
 ```
-                  ┌──────────────────────┐
-                  │  zGameLib (T1)       │  (built as engine dep)
-                  │  engine/libs/        │
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  Nexus-engine (T2)   │  zig build build-engine
-                  │  engine/             │  → engine/build/bin/nexus-engine
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  Link-editor (T3)    │  zig build build-editor
-                  │  editor/             │  → editor/build/bin/link-editor
-                  └──────────┬───────────┘
-                             │
-                  ┌──────────▼───────────┐
-                  │  pipeline            │  zig build pipeline
-                  │  (aggregator)        │  (the default step)
-                  └──────────────────────┘
+                    ┌──────────────────────────┐
+                    │  zGameLib (T1)           │  Zig modules
+                    │  engine/libs/zGameLib/   │  (comptime-friendly)
+                    └────────────┬─────────────┘
+                                 │
+                    ┌────────────▼─────────────┐
+                    │  Nexus Engine (T2)       │  STATIC LIBRARY
+                    │  engine/                 │  engine/build/lib/libnexus-engine.a
+                    └────────────┬─────────────┘
+                                 │
+              ┌──────────────────┼──────────────────┐
+              │                  │                  │
+  ┌───────────▼────────┐  ┌─────▼──────┐  ┌────────▼──────────┐
+  │  Link-editor (T3)  │  │  (future)  │  │  (future)         │
+  │  editor/build/bin/ │  │  Sandbox   │  │  Runtime          │
+  │  link-editor       │  │  Game      │  │  (shipping)       │
+  └────────────────────┘  └────────────┘  └───────────────────┘
+        All consumers link the Nexus static library
 ```
 
-## Quick start
+### How this maps to Zig
+
+| Tier | Zig mechanism | Why |
+|------|--------------|-----|
+| **T1 — zGameLib** | `b.addModule("zgame", ...)` — source-level Zig modules | Comptime generics, zero-overhead abstractions, and `usingnamespace` re-exports shine here |
+| **T2 — Nexus** | `b.addLibrary(.{ .linkage = .static, ... })` — static library (`libnexus-engine.a`) | The Cherno boundary: clear contract, faster consumer iteration, professional engine-as-product |
+| **T3 — Editor** | `b.addExecutable(...)` + `linkLibrary(nexus_lib)` — consumer exe | Links the pre-compiled static lib, imports the `nexus` module for types |
+
+zGameLib stays as Zig modules because that's where Zig's comptime model delivers the most value (Vulkan pipeline builders, platform abstractions, FrameRing). Nexus becomes a static library to enforce the architectural boundary — consumers (editor, games) link it rather than recompiling engine source.
+
+## Pipeline build
 
 ```bash
-# Initialise all submodules (one-time)
+# One-time setup
 git submodule update --init --recursive
 
-# Full pipeline — builds every tier in the correct order
+# Full pipeline — builds every tier in order
 zig build pipeline
 
-# Build individual tiers
-zig build build-engine
-zig build build-editor
-
-# Visualise the execution graph
-zig build pipeline --summary all
+# Individual steps
+zig build build-engine    # Nexus static lib + runtime exe
+zig build build-editor    # Link-editor consumer
+zig build pipeline --summary all   # visualise the DAG
 ```
 
-## Artifact locations
+### Artifacts
 
-Each tier installs into its own local `build/` directory:
-
-| Tier | Command | Artifact |
-|------|---------|----------|
-| Nexus-engine | `zig build build-engine` | `engine/build/bin/nexus-engine` |
-| Link-editor | `zig build build-editor` | `editor/build/bin/link-editor` |
-
-This keeps artifacts co-located with their source, matches the existing `.gitignore`, and keeps CI-friendly isolation.
+| Command | Produces | Description |
+|---------|----------|-------------|
+| `zig build build-engine` | `engine/build/lib/libnexus-engine.a` | Static library (Cherno boundary) |
+| | `engine/build/bin/nexus-runtime` | Test runner executable |
+| `zig build build-editor` | `editor/build/bin/link-editor` | Editor consumer executable |
 
 ## Standalone builds
 
 Submodules remain fully functional in isolation:
 
 ```bash
-cd engine && zig build          # → engine/zig-out/bin/nexus-engine
-cd engine && zig build run
+cd engine && zig build             # → engine/zig-out/lib/ + bin/
+cd engine && zig build run         # runs nexus-runtime standalone
+cd engine && zig build pipeline    # per-tier pipeline step
 
-cd editor && zig build          # → editor/zig-out/bin/link-editor (if prerequisites exist)
+cd editor && zig build             # → editor/zig-out/bin/link-editor
 cd editor && zig build run
+cd editor && zig build pipeline    # per-tier pipeline step
 ```
 
 ## Requirements
@@ -87,11 +97,11 @@ cd editor && zig build run
 ├── AGENTS.md               # Agent guidance for AI coding assistants
 ├── engine/                 # T2 Nexus-engine (submodule)
 │   ├── build.zig
-│   ├── src/main.zig
+│   ├── src/
 │   └── libs/zGameLib/      # T1 zGameLib (nested submodule)
 ├── editor/                 # T3 Link-editor (submodule)
 │   ├── build.zig
-│   └── src/main.zig
+│   └── src/
 ├── docs/                   # Shared docs
 ├── src/                    # Template leftovers (not compiled)
 └── README.md
