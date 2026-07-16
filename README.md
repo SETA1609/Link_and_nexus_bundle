@@ -3,7 +3,7 @@
 **Meta-repository** that aggregates three architectural tiers via Git submodules:
 
 ```
-T3: Link-editor (editor/)    — Dear ImGui editor, consumes Nexus static lib
+T3: Link-editor (editor/)    — Dear ImGui editor, links libnexus-engine.a
 T2: Nexus Engine (engine/)   — Hybrid SceneNode + Flecs ECS, delivered as static library
 T1: zGameLib (engine/libs/)  — Platform, Vulkan, GPU, FrameRing (Zig modules)
 ```
@@ -30,11 +30,11 @@ This gives a clean boundary between the engine as a product and its consumers:
               ┌──────────────────┼──────────────────┐
               │                  │                  │
   ┌───────────▼────────┐  ┌─────▼──────┐  ┌────────▼──────────┐
-  │  Link-editor (T3)  │  │  (future)  │  │  (future)         │
-  │  editor/build/bin/ │  │  Sandbox   │  │  Runtime          │
-  │  link-editor       │  │  Game      │  │  (shipping)       │
+  │  Link-editor (T3)  │  │  (future)  │  │  nexus-runtime    │
+  │  editor/build/bin/ │  │  Sandbox   │  │  engine/build/bin/│
+  │  link-editor       │  │  Game      │  │  (no editor)      │
   └────────────────────┘  └────────────┘  └───────────────────┘
-        All consumers link the Nexus static library
+        All consumers link libnexus-engine.a (+ import nexus module for types)
 ```
 
 ### How this maps to Zig
@@ -42,10 +42,33 @@ This gives a clean boundary between the engine as a product and its consumers:
 | Tier | Zig mechanism | Why |
 |------|--------------|-----|
 | **T1 — zGameLib** | `b.addModule("zgame", ...)` — source-level Zig modules | Comptime generics, zero-overhead abstractions, and `usingnamespace` re-exports shine here |
-| **T2 — Nexus** | `b.addLibrary(.{ .linkage = .static, ... })` — static library (`libnexus-engine.a`) | The Cherno boundary: clear contract, faster consumer iteration, professional engine-as-product |
-| **T3 — Editor** | `b.addExecutable(...)` + `linkLibrary(nexus_lib)` — consumer exe | Links the pre-compiled static lib, imports the `nexus` module for types |
+| **T2 — Nexus** | `build-lib` → `libnexus-engine.a`; `build-runtime` → `nexus-runtime` | Cherno split: engine core as static lib, plus a no-editor runtime exe |
+| **T3 — Editor** | `addImport("nexus", ...)` + `linkLibrary(nexus_lib)` — consumer exe | Separate from runtime — editor tools only, links the same static lib |
 
-zGameLib stays as Zig modules because that's where Zig's comptime model delivers the most value (Vulkan pipeline builders, platform abstractions, FrameRing). Nexus becomes a static library to enforce the architectural boundary — consumers (editor, games) link it rather than recompiling engine source.
+zGameLib stays as Zig modules because that's where Zig's comptime model delivers the most value (Vulkan pipeline builders, platform abstractions, FrameRing). Nexus is built as a static library to enforce the architectural boundary — consumers link `libnexus-engine.a` rather than recompiling engine source.
+
+### Consumer hookup (Zig pattern)
+
+Consumers import the `nexus` module for types and link the static library for the compiled engine — the same libs-first pattern zGameLib uses for its adapters:
+
+```zig
+editor_mod.addImport("nexus", nexus_dep.module("nexus"));
+editor_mod.linkLibrary(nexus_dep.artifact("nexus-engine"));
+```
+
+T2 always produces `libnexus-engine.a` as its primary artifact. The module import provides the public API (`NexusApp`, servers, etc.); `linkLibrary` pulls in the pre-compiled implementation.
+
+## Iteration & hot reload
+
+Development iteration uses a **hybrid hot-reload strategy** — not pure DLL swapping, not restart-only:
+
+1. **Data-driven reload** (first) — scenes, textures, locale via file watching + `ReloadEventBus`
+2. **Selective code reload** (later) — gameplay in a shared library; Nexus static lib stays the stable host (Casey Muratori + Traction Point pattern)
+3. **Fast restart** (always) — valid fallback when layouts change or reload is unsafe
+
+This follows Handmade Hero's platform/game split, Hazel's asset monitoring, and Madrigal Games' practical Zig reload work. Full rationale, quotes, and citations:
+
+**[docs/hot-reload-theory.md](docs/hot-reload-theory.md)**
 
 ## Pipeline build
 
@@ -56,9 +79,11 @@ git submodule update --init --recursive
 # Full pipeline — builds every tier in order
 zig build pipeline
 
-# Individual steps
-zig build build-engine    # Nexus static lib + runtime exe
-zig build build-editor    # Link-editor consumer
+# Individual steps (Cherno paths on T2)
+zig build build-lib       # libnexus-engine.a only (engine core)
+zig build build-runtime   # nexus-runtime (no editor)
+zig build build-engine    # both T2 paths
+zig build build-editor    # Link-editor (T3)
 zig build pipeline --summary all   # visualise the DAG
 ```
 
@@ -66,9 +91,10 @@ zig build pipeline --summary all   # visualise the DAG
 
 | Command | Produces | Description |
 |---------|----------|-------------|
-| `zig build build-engine` | `engine/build/lib/libnexus-engine.a` | Static library (Cherno boundary) |
-| | `engine/build/bin/nexus-runtime` | Test runner executable |
-| `zig build build-editor` | `editor/build/bin/link-editor` | Editor consumer executable |
+| `zig build build-lib` | `engine/build/lib/libnexus-engine.a` | Static library — Cherno engine core (no editor) |
+| `zig build build-runtime` | `engine/build/bin/nexus-runtime` | Runtime executable — engine without editor |
+| `zig build build-engine` | both above | Full T2 build |
+| `zig build build-editor` | `editor/build/bin/link-editor` | Editor executable (separate from runtime) |
 
 ## Standalone builds
 
@@ -102,7 +128,7 @@ cd editor && zig build pipeline    # per-tier pipeline step
 ├── editor/                 # T3 Link-editor (submodule)
 │   ├── build.zig
 │   └── src/
-├── docs/                   # Shared docs
+├── docs/                   # Shared docs (incl. hot-reload-theory.md)
 ├── src/                    # Template leftovers (not compiled)
 └── README.md
 ```

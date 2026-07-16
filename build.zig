@@ -4,14 +4,12 @@
 //    just link that to all of your executables."
 //
 //   T1: zGameLib — Zig modules (source-level, comptime-friendly)
-//   T2: Nexus    — STATIC LIBRARY (Cherno boundary: engine/build/lib/)
-//   T3: Editor   — executable that links the Nexus library
-//                  (+ future games/runtimes as additional consumers)
+//   T2: Nexus    — STATIC LIBRARY + no-editor runtime (engine/build/)
+//   T3: Editor   — separate executable linking libnexus-engine.a
 //
-// Zig's adaptation: zGameLib stays as modules (where Zig's comptime
-// shines), Nexus is a .a/.lib for the explicit contract, consumers
-// are executables. This gives clean separation, faster editor iteration,
-// and a professional "engine as product" workflow.
+// Cherno split on T2:
+//   build-lib     → libnexus-engine.a  (Hazel — engine core, no editor)
+//   build-runtime → nexus-runtime      (game/runtime without Hazelnut)
 
 const std = @import("std");
 
@@ -22,22 +20,45 @@ pub fn build(b: *std.Build) void {
     const optimize_flag = b.fmt("-Doptimize={s}", .{@tagName(optimize)});
 
     // ============================================================
-    // T2: Nexus-engine — primary artifact is a STATIC LIBRARY
-    //     (zGameLib T1 is built transitively as a Zig dependency)
+    // T2 PATH 1: Nexus static library (Cherno engine core)
     // ============================================================
-    const engine_cmd = b.addSystemCommand(&.{
-        "zig", "build",
+    const lib_cmd = b.addSystemCommand(&.{
+        "zig", "build", "build-lib",
         "--prefix", "build",
         optimize_flag,
     });
-    engine_cmd.setCwd(b.path("engine"));
+    lib_cmd.setCwd(b.path("engine"));
 
-    const engine_step = b.step("build-engine",
-        "Build Nexus static library (primary) + runtime exe (testing)");
-    engine_step.dependOn(&engine_cmd.step);
+    const lib_step = b.step("build-lib",
+        "Build libnexus-engine.a (Cherno engine core — no editor)");
+    lib_step.dependOn(&lib_cmd.step);
 
     // ============================================================
-    // T3: Link-editor — executable consuming the Nexus library
+    // T2 PATH 2: No-editor runtime (Cherno game without editor)
+    // ============================================================
+    const runtime_cmd = b.addSystemCommand(&.{
+        "zig", "build", "build-runtime",
+        "--prefix", "build",
+        optimize_flag,
+    });
+    runtime_cmd.setCwd(b.path("engine"));
+
+    const runtime_step = b.step("build-runtime",
+        "Build nexus-runtime (no-editor consumer of libnexus-engine.a)");
+    runtime_step.dependOn(lib_step);
+    runtime_step.dependOn(&runtime_cmd.step);
+
+    // ============================================================
+    // T2 aggregate: static lib + no-editor runtime
+    // ============================================================
+    const engine_step = b.step("build-engine",
+        "Build Nexus: libnexus-engine.a + nexus-runtime");
+    engine_step.dependOn(lib_step);
+    engine_step.dependOn(runtime_step);
+
+    // ============================================================
+    // T3: Link-editor — separate executable (Cherno Hazelnut)
+    //     Depends on the static lib, not the runtime exe.
     // ============================================================
     const editor_cmd = b.addSystemCommand(&.{
         "zig", "build",
@@ -47,26 +68,30 @@ pub fn build(b: *std.Build) void {
     editor_cmd.setCwd(b.path("editor"));
 
     const editor_step = b.step("build-editor",
-        "Build Link-editor (links Nexus static lib) → editor/build/bin/");
+        "Build Link-editor (links libnexus-engine.a) → editor/build/bin/");
+    editor_step.dependOn(lib_step);
     editor_step.dependOn(&editor_cmd.step);
 
     // ============================================================
-    // Pipeline — the one-command entry point
+    // Pipeline — full 3-tier DAG
     // ============================================================
     const pipeline_step = b.step("pipeline",
-        \\Full 3-tier pipeline: zGameLib (modules) → Nexus (static lib) → Editor (consumer)
+        \\Full 3-tier pipeline (Cherno model)
         \\
-        \\  zig build pipeline                 # full ordered build (default)
-        \\  zig build build-engine             # Nexus static lib + runtime exe
-        \\  zig build build-editor             # Link-editor only
-        \\  zig build pipeline --summary all   # visualise the DAG
+        \\  zig build build-lib       # T2: libnexus-engine.a only
+        \\  zig build build-runtime   # T2: nexus-runtime (no editor)
+        \\  zig build build-engine    # T2: lib + runtime
+        \\  zig build build-editor    # T3: link-editor
+        \\  zig build pipeline        # all of the above
+        \\  zig build pipeline --summary all
         \\
-        \\Artifacts (Cherno model):
-        \\  engine/build/lib/libnexus-engine.a   — core engine (static lib)
-        \\  engine/build/bin/nexus-runtime       — standalone test runner
-        \\  editor/build/bin/link-editor          — editor consumer exe
+        \\Artifacts:
+        \\  engine/build/lib/libnexus-engine.a  — engine core (static lib)
+        \\  engine/build/bin/nexus-runtime        — runtime without editor
+        \\  editor/build/bin/link-editor           — editor (separate exe)
     );
-    pipeline_step.dependOn(engine_step);
+    pipeline_step.dependOn(lib_step);
+    pipeline_step.dependOn(runtime_step);
     pipeline_step.dependOn(editor_step);
 
     b.default_step = pipeline_step;
