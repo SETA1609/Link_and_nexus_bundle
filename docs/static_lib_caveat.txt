@@ -1,0 +1,22 @@
+Architecture: Cherno Static Lib + No-Editor Runtime
+
+T2 (Nexus Engine) exposes two build paths:
+
+  zig build build-lib      → libnexus-engine.a   (Hazel — engine core, no editor)
+  zig build build-runtime  → nexus-runtime       (game/runtime without Hazelnut)
+
+Implementation:
+  - src/root.zig           — public API compiled into libnexus-engine.a
+  - src/runtime/main.zig   — thin no-editor entry point (imports nexus + linkLibrary)
+
+T3 (Link-editor) is a separate executable that also links libnexus-engine.a.
+It does NOT share the runtime entry point — editor code stays in editor/.
+
+Consumer pattern (runtime, editor, games):
+  mod.addImport("nexus", nexus_dep.module("nexus"));
+  mod.linkLibrary(nexus_dep.artifact("nexus-engine"));
+
+Hot reload strategy (hybrid): docs/hot-reload-theory.md
+  Layer 1 = libnexus-engine.a (stable host)
+  Layer 2 = future shared lib (reloadable gameplay)
+  Layer 3 = data-driven reload (ReloadEventBus)

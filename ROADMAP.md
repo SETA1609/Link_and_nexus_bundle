@@ -29,7 +29,7 @@ Everything on the path to **Nexus v1.0.0** (first 2D game) is designed around 2D
 |----------|----------------|
 | Hybrid **SceneNode + optional ECS** (Flecs adapter first) | Nexus |
 | **Data-driven** scenes, resources, locale — compile where possible | Nexus `build.zig` |
-| **Hot reload** — data before code; `ReloadEventBus` + editor file watcher | Nexus + Crucible |
+| **Hot reload** — hybrid: data first, selective code reload in shared lib; see [`docs/hot-reload-theory.md`](docs/hot-reload-theory.md) | Nexus + Crucible |
 | **WASM modding** — sandboxed host in engine; Crucible hides compilation | Nexus `WasmHost` + Crucible build UI |
 | **GameNetworkingSockets** (GNS) — full commitment, no ENet | Nexus (post–first 2D ship) |
 | **Dear ImGui** — tools only (Crucible); in-game UI via **2D batcher** | zGameLib `zimgui` (late) + Nexus |
@@ -139,7 +139,7 @@ Designed for the first 2D title from the start:
 3. **v1.0.0** — `project.nexus` settings; mod packages (`mod.json` + optional `mod.wasm`).
 4. **v1.1.0+** — Crucible file watcher drives `EditorHost.reimport` / `reloadScene`.
 
-Code hot reload (Zig) is **not planned** — restart for native code changes.
+**Code hot reload (Zig)** is **selective, not universal** — gameplay/tool code in a future shared library reloads while `libnexus-engine.a` stays stable; restart remains the fallback. See [`docs/hot-reload-theory.md`](docs/hot-reload-theory.md).
 
 ---
 
@@ -234,4 +234,5 @@ When updating roadmaps, edit the **canonical file in each submodule**, then bump
 - [Nexus Reference](engine/docs/Nexus_Reference.md) — authoritative Tier 2 API
 - [Nexus theory ladder](engine/docs/theory/README.md) — architecture rationale
 - [WASM modding](engine/docs/theory/13-wasm-modding.md) · [GNS decision](engine/docs/theory/11-networking-decision.md)
-- [Hot reload](engine/docs/theory/08-hot-reload-nexus-engine.md) · [Crucible hot reload](engine/docs/theory/09-hot-reload-crucible.md)
+- [**Hybrid hot-reload theory**](docs/hot-reload-theory.md) — bundle-level strategy + citations (Casey, Cherno, Traction Point)
+- [Hot reload (engine)](engine/docs/theory/08-hot-reload-nexus-engine.md) · [Crucible hot reload](engine/docs/theory/09-hot-reload-crucible.md)
