@@ -1,6 +1,8 @@
 [submodule "editor"]
 	path = editor
 	url = git@github.com:SETA1609/Link-editor.git
+	branch = main
 [submodule "engine"]
 	path = engine
 	url = git@github.com:SETA1609/Nexus-engine.git
+	branch = main
