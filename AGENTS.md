@@ -69,6 +69,29 @@ The bundle uses a **hybrid** model (data reload first, selective native code rel
 
 Tier-specific implementation: `engine/docs/theory/08-hot-reload-nexus-engine.md`, `engine/docs/theory/09-hot-reload-crucible.md`.
 
+## Docker orchestration (recommended for CI / clean-room builds)
+
+Each tier and the root have a consistent `docker/` + `scripts/` pattern:
+
+| Level | Build in Docker | Interactive | Cleanup |
+|-------|----------------|-------------|---------|
+| Root (bundle) | `./scripts/build-full-stack-in-docker.sh` | — | `./scripts/clean.sh` |
+| zGameLib (T1) | `engine/libs/zGameLib/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+| Nexus-engine (T2) | `engine/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+| Link-editor (T3) | `editor/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+
+```sh
+# Full stack in Docker
+./scripts/build-full-stack-in-docker.sh pipeline
+
+# Single tier in Docker
+engine/libs/zGameLib/scripts/build-in-docker.sh pipeline
+engine/scripts/build-in-docker.sh build-lib
+editor/scripts/build-in-docker.sh build-editor
+```
+
+Docker images are built from `docker/Dockerfile` in each repo (Ubuntu 24.04 + Zig 0.16.0 + Vulkan ICD). Use `clean.sh` in each tier to remove build artifacts and dangling images.
+
 ## Standalone build per tier (still works)
 
 ```sh
