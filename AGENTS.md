@@ -106,12 +106,34 @@ Requires Zig **0.16.0** (pinned in CI by `mlugg/setup-zig@v2`). Windows/macOS/Li
 
 **Current build status**: full pipeline succeeds (`zig build pipeline`). Engine exports `NexusApp` from `src/root.zig`; editor links `libnexus-engine.a`.
 
+## EngineInterface contract
+
+The root bundle owns the `EngineInterface` contract at `contract/engine_interface.zig`.
+It defines a vtable-based interface (`EngineInterface` + `VTable`) that the editor
+uses to interact with any engine. Nexus implements the interface via its
+`createEngineInterface()` factory. Other engines can be swapped in by providing
+their own factory.
+
+```zig
+// Editor consumes: EngineInterface + factory from any engine
+const engine = @import("engine_interface");
+
+const factory = @extern(engine.EngineFactory, .{ .name = "createEngineInterface" });
+var iface = factory();
+defer iface.deinit();
+try iface.init(.{...});
+while (!iface.shouldClose()) try iface.tick();
+```
+
+The contract lives in the root so both `engine/` and `editor/` can reference it
+via `b.path("../contract/engine_interface.zig")` in their build scripts.
+
 ## Key gotchas
 
 - **No tests** anywhere. No `zig build test` step.
 - **engine/AGENTS.md** contains engine-specific agent guidance — source of truth for that tier.
 - **Root `README.md` is now up to date** — describes the 3-tier Cherno-aligned pipeline architecture.
-- **Consumer hookup** — editor imports `nexus` module for types and `linkLibrary`s `libnexus-engine.a` (libs-first pattern).
+- **Consumer hookup** — editor imports `engine_interface` module for types and links the engine `.a` from `editor/plugins/` (no direct source dependency on the engine). Runtime usage goes through `EngineInterface` (defined in `contract/`).
 - **Hot reload** — hybrid strategy documented in `docs/hot-reload-theory.md`; future `build-plugin` DAG step for reloadable shared lib (not implemented yet).
 - **`build/` is gitignored** (standard Zig build output).
 - **C/C++ dirs** (`src/c/`, `src/cpp/`) are template leftovers — **not compiled** by engine or editor builds.
