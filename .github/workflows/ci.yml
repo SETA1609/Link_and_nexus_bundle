@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-workflows:
+    name: lint workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate workflow YAML
+        run: python3 scripts/validate-workflows.py
+
+  zgame:
+    name: zGameLib (T1)
+    uses: ./.github/workflows/reusable/build.yml
+    with:
+      component: zgame
+      target: pipeline
+
+  nexus:
+    name: Nexus-engine (T2)
+    needs: [zgame]
+    uses: ./.github/workflows/reusable/build.yml
+    with:
+      component: nexus
+      target: pipeline
+
+  editor:
+    name: Link-editor (T3)
+    needs: [nexus]
+    uses: ./.github/workflows/reusable/build.yml
+    with:
+      component: editor
+      target: pipeline
+
+  full-stack:
+    name: Full stack
+    needs: [editor]
+    uses: ./.github/workflows/reusable/build.yml
+    with:
+      component: full-stack
+      target: pipeline

@@ -57,8 +57,22 @@ pub fn build(b: *std.Build) void {
     engine_step.dependOn(runtime_step);
 
     // ============================================================
+    // Install engine plugin into editor/plugins/ so the editor can
+    // link the .a without a direct source dependency on the engine.
+    // ============================================================
+    const install_plugin = b.addSystemCommand(&.{
+        "cp",
+        "engine/build/lib/libnexus-engine.a",
+        "editor/plugins/libnexus-engine.a",
+    });
+    const install_plugin_step = b.step("install-plugin",
+        "Copy libnexus-engine.a → editor/plugins/");
+    install_plugin_step.dependOn(lib_step);
+    install_plugin_step.dependOn(&install_plugin.step);
+
+    // ============================================================
     // T3: Link-editor — separate executable (Cherno Hazelnut)
-    //     Depends on the static lib, not the runtime exe.
+    //     Links the .a from plugins/ — no direct engine dep.
     // ============================================================
     const editor_cmd = b.addSystemCommand(&.{
         "zig", "build",
@@ -69,7 +83,7 @@ pub fn build(b: *std.Build) void {
 
     const editor_step = b.step("build-editor",
         "Build Link-editor (links libnexus-engine.a) → editor/build/bin/");
-    editor_step.dependOn(lib_step);
+    editor_step.dependOn(install_plugin_step);
     editor_step.dependOn(&editor_cmd.step);
 
     // ============================================================

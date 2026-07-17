@@ -1,0 +1,44 @@
+name: Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      component:
+        description: 'Component to build: zgame, nexus, editor, or full-stack'
+        required: true
+        type: string
+      target:
+        description: 'Build target (zig build step): pipeline, build-lib, build-engine, build-editor, examples'
+        required: false
+        default: 'pipeline'
+        type: string
+      os:
+        description: 'OS runner: ubuntu-latest, macos-latest, windows-latest'
+        required: false
+        default: 'ubuntu-latest'
+        type: string
+
+jobs:
+  build:
+    name: ${{ inputs.component }} · ${{ inputs.target }}
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Inject slug/short variables
+        uses: rlespinasse/github-slug-action@v4
+
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+          use-cache: true
+
+      - name: zig version
+        run: zig version
+
+      - name: Build ${{ inputs.component }} (${{ inputs.target }})
+        working-directory: ${{ inputs.component == 'full-stack' && '.' || (inputs.component == 'zgame' && 'engine/libs/zGameLib' || (inputs.component == 'nexus' && 'engine' || (inputs.component == 'editor' && 'editor' || '.'))) }}
+        run: zig build ${{ inputs.target }}

@@ -69,6 +69,29 @@ The bundle uses a **hybrid** model (data reload first, selective native code rel
 
 Tier-specific implementation: `engine/docs/theory/08-hot-reload-nexus-engine.md`, `engine/docs/theory/09-hot-reload-crucible.md`.
 
+## Docker orchestration (recommended for CI / clean-room builds)
+
+Each tier and the root have a consistent `docker/` + `scripts/` pattern:
+
+| Level | Build in Docker | Interactive | Cleanup |
+|-------|----------------|-------------|---------|
+| Root (bundle) | `./scripts/build-full-stack-in-docker.sh` | — | `./scripts/clean.sh` |
+| zGameLib (T1) | `engine/libs/zGameLib/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+| Nexus-engine (T2) | `engine/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+| Link-editor (T3) | `editor/scripts/build-in-docker.sh` | `shell.sh` | `clean.sh` |
+
+```sh
+# Full stack in Docker
+./scripts/build-full-stack-in-docker.sh pipeline
+
+# Single tier in Docker
+engine/libs/zGameLib/scripts/build-in-docker.sh pipeline
+engine/scripts/build-in-docker.sh build-lib
+editor/scripts/build-in-docker.sh build-editor
+```
+
+Docker images are built from `docker/Dockerfile` in each repo (Ubuntu 24.04 + Zig 0.16.0 + Vulkan ICD). Use `clean.sh` in each tier to remove build artifacts and dangling images.
+
 ## Standalone build per tier (still works)
 
 ```sh
@@ -83,12 +106,36 @@ Requires Zig **0.16.0** (pinned in CI by `mlugg/setup-zig@v2`). Windows/macOS/Li
 
 **Current build status**: full pipeline succeeds (`zig build pipeline`). Engine exports `NexusApp` from `src/root.zig`; editor links `libnexus-engine.a`.
 
+## EngineInterface contract
+
+The root bundle owns the `EngineInterface` contract at `contract/engine_interface.zig`.
+It defines a vtable-based interface (`EngineInterface` + `VTable`) that the editor
+uses to interact with any engine. Nexus implements the interface via its
+`createEngineInterface()` factory. Other engines can be swapped in by providing
+their own factory.
+
+```zig
+// Editor consumes: EngineInterface + factory from any engine
+const engine = @import("engine_interface");
+
+const factory = @extern(engine.EngineFactory, .{ .name = "createEngineInterface" });
+var iface = factory();
+defer iface.deinit();
+try iface.init(.{...});
+while (!iface.shouldClose()) try iface.tick();
+```
+
+The contract lives in the root so both `engine/` and `editor/` can reference it
+via `b.path("../contract/engine_interface.zig")` in their build scripts.
+
 ## Key gotchas
 
 - **No tests** anywhere. No `zig build test` step.
+- **Architecture decisions** (static engine + dynamic game logic, script encapsulation for CI) are locked in at [`docs/architecture-decisions.md`](docs/architecture-decisions.md).
+- **Auto-rebase branches**: on push to main, `.github/workflows/rebase-branches.yml` rebases all living branches onto it via `scripts/rebase-branches.sh`. Branches with conflicts are skipped. Each sub-repo has its own copy.
 - **engine/AGENTS.md** contains engine-specific agent guidance — source of truth for that tier.
 - **Root `README.md` is now up to date** — describes the 3-tier Cherno-aligned pipeline architecture.
-- **Consumer hookup** — editor imports `nexus` module for types and `linkLibrary`s `libnexus-engine.a` (libs-first pattern).
+- **Consumer hookup** — editor imports `engine_interface` module for types and links the engine `.a` from `editor/plugins/` (no direct source dependency on the engine). Runtime usage goes through `EngineInterface` (defined in `contract/`).
 - **Hot reload** — hybrid strategy documented in `docs/hot-reload-theory.md`; future `build-plugin` DAG step for reloadable shared lib (not implemented yet).
 - **`build/` is gitignored** (standard Zig build output).
 - **C/C++ dirs** (`src/c/`, `src/cpp/`) are template leftovers — **not compiled** by engine or editor builds.
