@@ -10,6 +10,8 @@ T1: zGameLib (engine/libs/)  — Platform, Vulkan, GPU, FrameRing (Zig modules)
 
 ## Architecture & Compilation Targets
 
+> **Architecture decisions are recorded in [`docs/architecture-decisions.md`](docs/architecture-decisions.md)** — static engine library + dynamic game logic loading + script encapsulation for CI.
+
 The build follows **TheCherno's recommended engine architecture** (from the Hazel series):
 
 > *"Separate out your core engine into its own static library and then just link that to all of your executables."*
