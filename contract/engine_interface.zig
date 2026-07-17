@@ -25,9 +25,9 @@ pub const VTable = struct {
     getEngineVersion: *const fn (ctx: *anyopaque) u32,
 };
 
-pub const EngineFactory = *const fn () EngineInterface;
+pub const EngineFactory = *const fn () callconv(.c) EngineInterface;
 
-pub const EngineInterface = struct {
+pub const EngineInterface = extern struct {
     ctx: *anyopaque,
     vtable: *const VTable,
 
