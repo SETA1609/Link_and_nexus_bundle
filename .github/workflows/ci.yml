@@ -16,20 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate workflow YAML
-        run: |
-          python3 -c "
-import yaml, sys, os
-for root, dirs, files in os.walk('.github/workflows'):
-    for f in files:
-        if f.endswith('.yml') or f.endswith('.yaml'):
-            path = os.path.join(root, f)
-            try:
-                yaml.safe_load(open(path))
-                print(f'OK: {path}')
-            except yaml.YAMLError as e:
-                print(f'FAIL: {path}: {e}')
-                sys.exit(1)
-          " || true
+        run: python3 scripts/validate-workflows.py
 
   zgame:
     name: zGameLib (T1)
