@@ -132,6 +132,7 @@ via `b.path("../contract/engine_interface.zig")` in their build scripts.
 
 - **No tests** anywhere. No `zig build test` step.
 - **Architecture decisions** (static engine + dynamic game logic, script encapsulation for CI) are locked in at [`docs/architecture-decisions.md`](docs/architecture-decisions.md).
+- **Auto-rebase branches**: on push to main, `.github/workflows/rebase-branches.yml` rebases all living branches onto it via `scripts/rebase-branches.sh`. Branches with conflicts are skipped. Each sub-repo has its own copy.
 - **engine/AGENTS.md** contains engine-specific agent guidance — source of truth for that tier.
 - **Root `README.md` is now up to date** — describes the 3-tier Cherno-aligned pipeline architecture.
 - **Consumer hookup** — editor imports `engine_interface` module for types and links the engine `.a` from `editor/plugins/` (no direct source dependency on the engine). Runtime usage goes through `EngineInterface` (defined in `contract/`).
